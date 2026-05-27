@@ -16,6 +16,16 @@ from inspect_ai.model._chat_message import ChatMessage, ChatMessageAssistant
 
 logger = getLogger(__name__)
 
+REASONING_PARSER_BY_MODEL: tuple[tuple[str, str], ...] = (
+    (r"(^|/)Qwen3(?:[-._/]|$)[^/]*", "qwen3"),
+    (r"(^|/)QwQ-32B(?:[-._/]|$)[^/]*", "deepseek_r1"),
+    (r"(^|/)DeepSeek-R1(?:[-._/]|$)[^/]*", "deepseek_r1"),
+    (r"(^|/)DeepSeek-V3\.1(?:[-._/]|$)[^/]*", "deepseek_v3"),
+    (r"(^|/)GLM-4\.5(?:[-._/]|$)[^/]*", "glm45"),
+    (r"(^|/)granite-3\.2(?:[-._/]|$)[^/]*", "granite"),
+    (r"(^|/)MiniMax-M2(?:[-._/]|$)[^/]*", "minimax_m2_append_think"),
+)
+
 
 # Fixed effort -> token budget table used to bridge `reasoning_effort` onto
 # providers that only accept an explicit token budget (Anthropic Claude 3.7-4.5,
@@ -78,7 +88,9 @@ class ReasoningCapsule(NamedTuple):
     internal: JsonValue | None = None
 
 
-def parse_content_with_reasoning(content: str) -> tuple[str, ReasoningCapsule | None]:
+def parse_content_with_reasoning(
+    content: str, model: str | None = None
+) -> tuple[str, ReasoningCapsule | None]:
     """
     Looks for and extracts <think/> tags into reasoning text.
 
@@ -86,6 +98,9 @@ def parse_content_with_reasoning(content: str) -> tuple[str, ReasoningCapsule | 
     - The first element is the input content with the <think> tag and its contents fully removed.
     - The second element is a ReasoningCapsule named tuple (or None if no <think> tag is found).
     """
+    if model and not reasoning_parser_for_model(model):
+        return content, None
+
     # Match <think> tag with any attributes
     pattern = r"<think([^>]*)>(.*?)</think>"
     match = re.search(pattern, content, re.DOTALL)
@@ -122,6 +137,17 @@ def parse_content_with_reasoning(content: str) -> tuple[str, ReasoningCapsule | 
         )
     else:
         return content, None
+
+
+def reasoning_parser_for_model(model: str | None) -> str | None:
+    if not model:
+        return None
+
+    for pattern, parser in REASONING_PARSER_BY_MODEL:
+        if re.search(pattern, model, re.IGNORECASE):
+            return parser
+
+    return None
 
 
 def _parse_attr(attrs_str: str, name: str) -> str | None:

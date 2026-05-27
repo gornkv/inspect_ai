@@ -512,7 +512,7 @@ async def messages_from_openai(
             asst_content = message.get("content", None)
             if isinstance(asst_content, str):
                 asst_content, smuggled_reasoning = parse_content_with_reasoning(
-                    asst_content
+                    asst_content, model
                 )
                 asst_content, content_internal = parse_content_with_internal(
                     asst_content, CONTENT_INTERNAL_TAG
@@ -536,13 +536,17 @@ async def messages_from_openai(
             else:
                 content = []
                 for ac in asst_content:
-                    content.extend(content_from_openai(ac, parse_reasoning=True))
+                    content.extend(
+                        content_from_openai(ac, parse_reasoning=True, model=model)
+                    )
 
             # resolve reasoning (OpenAI doesn't suport this however OpenAI-compatible
             # interfaces e.g. DeepSeek do include this field so we pluck it out)
             # note that we already handled <think> tags so we only care about the
             # other sources
-            parse_result = parse_reasoning_content(message)
+            parse_result = parse_reasoning_content(
+                message, model, look_for_reasoning_tags=False
+            )
             if parse_result is not None:
                 reasoning: ContentReasoning | None = (
                     content_reasoning_from_openai_reasoning(parse_result[0])
@@ -652,6 +656,7 @@ def tool_call_from_openai(tool_call: ChatCompletionMessageToolCallParam) -> Tool
 def content_from_openai(
     content: ChatCompletionContentPartParam | ChatCompletionContentPartRefusalParam,
     parse_reasoning: bool = False,
+    model: str | None = None,
 ) -> list[Content]:
     # Some providers omit the type tag and use "object-with-a-single-field" encoding
     if "type" not in content and len(content) == 1:
@@ -660,7 +665,7 @@ def content_from_openai(
         text = content["text"]
         text, content_internal = parse_content_with_internal(text, CONTENT_INTERNAL_TAG)
         if parse_reasoning:
-            content_text, reasoning = parse_content_with_reasoning(text)
+            content_text, reasoning = parse_content_with_reasoning(text, model)
             if reasoning:
                 return [
                     ContentReasoning(
@@ -742,7 +747,7 @@ def chat_message_assistant_from_openai(
     msg_content = str(refusal or message.content or "")
 
     # look for reasoning
-    parse_result = parse_reasoning_content(message)
+    parse_result = parse_reasoning_content(message, model)
     if parse_result is not None:
         reasoning_content, remaining_content = parse_result
         reasoning: ContentReasoning | None = None
@@ -773,6 +778,8 @@ def chat_message_assistant_from_openai(
 
 def parse_reasoning_content(
     message: ChatCompletionMessage | ChatCompletionAssistantMessageParam,
+    model: str | None = None,
+    look_for_reasoning_tags: bool = True,
 ) -> tuple[CompletionsReasoningContent, str | None] | None:
     # look in various fields where reasoning lives
     for source in cast(
@@ -792,12 +799,15 @@ def parse_reasoning_content(
             )
 
     # not found, look for <think> tag
+    if not look_for_reasoning_tags:
+        return None
+
     content = (
         message.content
         if isinstance(message, ChatCompletionMessage)
         else str(message.get("content") or "")
     )
-    content_text, reasoning = parse_content_with_reasoning(content or "")
+    content_text, reasoning = parse_content_with_reasoning(content or "", model)
     if reasoning:
         return CompletionsReasoningContent(
             source="think", reasoning=reasoning.reasoning

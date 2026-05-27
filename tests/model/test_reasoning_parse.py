@@ -1,4 +1,22 @@
-from inspect_ai.model._reasoning import parse_content_with_reasoning
+from inspect_ai.model._reasoning import (
+    parse_content_with_reasoning,
+    reasoning_parser_for_model,
+)
+
+
+def test_reasoning_parser_for_model_matches_hf_and_quantized_names():
+    assert reasoning_parser_for_model("Qwen/Qwen3-8B") == "qwen3"
+    assert reasoning_parser_for_model("unsloth/Qwen3-8B-AWQ") == "qwen3"
+    assert reasoning_parser_for_model("deepseek-ai/DeepSeek-R1-Distill-Qwen-32B") == (
+        "deepseek_r1"
+    )
+    assert reasoning_parser_for_model("zai-org/GLM-4.5-Air") == "glm45"
+
+
+def test_reasoning_parser_for_model_does_not_match_next_generation():
+    assert reasoning_parser_for_model("Qwen/Qwen4-8B") is None
+    assert reasoning_parser_for_model("deepseek-ai/DeepSeek-V4.1") is None
+    assert reasoning_parser_for_model("zai-org/GLM-5") is None
 
 
 def test_reasoning_parse_basic():
@@ -87,6 +105,21 @@ def test_reasoning_parse_no_think_tag():
 def test_reasoning_parse_unclosed_tag():
     content, reasoning = parse_content_with_reasoning("<think>Unclosed reasoning")
     assert reasoning is None
+
+
+def test_reasoning_parse_skips_unmapped_models():
+    content, reasoning = parse_content_with_reasoning(
+        "<think>private</think>answer", model="custom-org/custom-model"
+    )
+    assert content == "<think>private</think>answer"
+    assert reasoning is None
+
+
+def test_reasoning_parse_uses_tags_when_model_missing():
+    content, reasoning = parse_content_with_reasoning("<think>private</think>answer")
+    assert reasoning is not None
+    assert reasoning.reasoning == "private"
+    assert content == "answer"
 
 
 # New tests for signature attribute

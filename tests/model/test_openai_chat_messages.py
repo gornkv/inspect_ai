@@ -1,7 +1,7 @@
 import pytest
 
 from inspect_ai._util.content import ContentReasoning, ContentText
-from inspect_ai.model._openai import messages_from_openai
+from inspect_ai.model._openai import messages_from_openai, parse_reasoning_content
 
 
 # Minimal stubs for OpenAI message params
@@ -100,3 +100,28 @@ async def test_user_message_passthrough():
     assert len(chat_msgs) == 1
     msg = chat_msgs[0]
     assert msg.content == user_content
+
+
+def test_parse_reasoning_content_skips_tags_for_known_non_tag_model():
+    message = {"role": "assistant", "content": "<think>private</think>answer"}
+    assert parse_reasoning_content(message, model="openai/gpt-4o") is None
+
+
+def test_parse_reasoning_content_uses_tags_for_mapped_model():
+    message = {"role": "assistant", "content": "<think>private</think>answer"}
+    result = parse_reasoning_content(message, model="Qwen/Qwen3-8B")
+    assert result is not None
+    assert result[0].reasoning == "private"
+    assert result[1] == "answer"
+
+
+def test_parse_reasoning_content_uses_explicit_reasoning_for_known_non_tag_model():
+    message = {
+        "role": "assistant",
+        "content": "answer",
+        "reasoning_content": "private",
+    }
+    result = parse_reasoning_content(message, model="openai/gpt-4o")
+    assert result is not None
+    assert result[0].source == "reasoning_content"
+    assert result[0].reasoning == "private"
